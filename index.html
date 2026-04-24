@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ SMS & CHAT ⚡</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Comic+Neue:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0a0a0a;
+    --paper: #f5f0e8;
+    --red: #e8192c;
+    --yellow: #ffd700;
+    --blue: #1a3a8f;
+    --panel-border: 3px solid #0a0a0a;
+    --thick-border: 5px solid #0a0a0a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    font-family: 'Comic Neue', cursive;
+    min-height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Halftone background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(circle, #00000015 1px, transparent 1px);
+    background-size: 12px 12px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Speed lines overlay */
+  .speed-bg {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.03;
+    background: repeating-conic-gradient(from 0deg at 50% 50%, #000 0deg 1deg, transparent 1deg 3deg);
+  }
+
+  /* ---- LOBBY SCREEN ---- */
+  #lobby {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    background: var(--paper);
+  }
+
+  #lobby::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, #00000018 1px, transparent 1px);
+    background-size: 10px 10px;
+  }
+
+  .lobby-panel {
+    background: var(--paper);
+    border: var(--thick-border);
+    box-shadow: 8px 8px 0 var(--ink);
+    padding: 40px;
+    max-width: 420px;
+    width: 90%;
+    position: relative;
+    z-index: 1;
+  }
+
+  .lobby-panel::before {
+    content: '';
+    position: absolute;
+    top: -12px; left: -12px;
+    right: 12px; bottom: 12px;
+    border: var(--panel-border);
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .manga-title {
+    font-family: 'Bangers', cursive;
+    font-size: 72px;
+    letter-spacing: 4px;
+    color: var(--ink);
+    text-align: center;
+    line-height: 0.9;
+    text-shadow: 4px 4px 0 var(--red), 6px 6px 0 var(--yellow);
+    animation: titlePulse 2s ease-in-out infinite;
+  }
+
+  @keyframes titlePulse {
+    0%, 100% { transform: scale(1) rotate(-1deg); }
+    50% { transform: scale(1.04) rotate(1deg); }
+  }
+
+  .manga-subtitle {
+    font-family: 'Bangers', cursive;
+    font-size: 18px;
+    letter-spacing: 6px;
+    text-align: center;
+    color: var(--blue);
+    margin-bottom: 30px;
+    border-top: var(--panel-border);
+    border-bottom: var(--panel-border);
+    padding: 6px 0;
+    margin-top: 8px;
+  }
+
+  .sfx-label {
+    font-family: 'Bangers', cursive;
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: #666;
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  .manga-input {
+    width: 100%;
+    padding: 12px 16px;
+    font-family: 'Comic Neue', cursive;
+    font-size: 16px;
+    font-weight: 700;
+    border: var(--thick-border);
+    background: white;
+    color: var(--ink);
+    outline: none;
+    margin-bottom: 16px;
+    box-shadow: 3px 3px 0 var(--ink);
+    transition: box-shadow 0.1s;
+  }
+
+  .manga-input:focus {
+    box-shadow: 5px 5px 0 var(--red);
+  }
+
+  .manga-btn {
+    width: 100%;
+    padding: 14px;
+    font-family: 'Bangers', cursive;
+    font-size: 24px;
+    letter-spacing: 3px;
+    border: var(--thick-border);
+    cursor: pointer;
+    box-shadow: 5px 5px 0 var(--ink);
+    transition: all 0.1s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .manga-btn:active {
+    transform: translate(3px, 3px);
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+
+  .btn-join {
+    background: var(--yellow);
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+
+  .btn-create {
+    background: var(--red);
+    color: white;
+  }
+
+  .divider {
+    text-align: center;
+    font-family: 'Bangers', cursive;
+    font-size: 16px;
+    letter-spacing: 4px;
+    color: #aaa;
+    margin: 8px 0;
+    position: relative;
+  }
+
+  .divider::before, .divider::after {
+    content: '───────';
+    color: #ccc;
+  }
+
+  /* ---- MAIN CHAT LAYOUT ---- */
+  #app {
+    display: none;
+    height: 100vh;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* TOP BAR */
+  .topbar {
+    background: var(--ink);
+    color: white;
+    padding: 0 20px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 4px solid var(--red);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .topbar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(255,255,255,0.03) 10px,
+      rgba(255,255,255,0.03) 20px
+    );
+  }
+
+  .topbar-title {
+    font-family: 'Bangers', cursive;
+    font-size: 28px;
+    letter-spacing: 3px;
+    color: var(--yellow);
+    text-shadow: 2px 2px 0 var(--red);
+  }
+
+  .room-badge {
+    background: var(--red);
+    color: white;
+    font-family: 'Bangers', cursive;
+    font-size: 14px;
+    letter-spacing: 2px;
+    padding: 4px 12px;
+    border: 2px solid white;
+    cursor: pointer;
+    box-shadow: 2px 2px 0 rgba(255,255,255,0.3);
+  }
+
+  .users-badge {
+    background: var(--yellow);
+    color: var(--ink);
+    font-family: 'Bangers', cursive;
+    font-size: 13px;
+    letter-spacing: 1px;
+    padding: 4px 10px;
+    border: 2px solid var(--ink);
+  }
+
+  /* MESSAGES AREA */
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scroll-behavior: smooth;
+  }
+
+  #messages::-webkit-scrollbar { width: 8px; }
+  #messages::-webkit-scrollbar-track { background: #e0dbd0; }
+  #messages::-webkit-scrollbar-thumb { background: var(--ink); }
+
+  /* MESSAGES */
+  .msg-wrapper {
+    display: flex;
+    flex-direction: column;
+    max-width: 75%;
+    animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes popIn {
+    from { transform: scale(0.5) translateY(20px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+
+  .msg-wrapper.mine {
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+
+  .msg-wrapper.theirs {
+    align-self: flex-start;
+    align-items: flex-start;
+  }
+
+  .msg-name {
+    font-family: 'Bangers', cursive;
+    font-size: 14px;
+    letter-spacing: 2px;
+    color: #666;
+    margin-bottom: 4px;
+    padding: 0 4px;
+  }
+
+  /* Speech bubble */
+  .bubble {
+    position: relative;
+    padding: 12px 18px;
+    border: 3px solid var(--ink);
+    font-weight: 700;
+    font-size: 15px;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .mine .bubble {
+    background: var(--yellow);
+    color: var(--ink);
+    box-shadow: 4px 4px 0 var(--ink);
+    border-radius: 16px 16px 0 16px;
+  }
+
+  .mine .bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -13px;
+    right: 10px;
+    width: 0; height: 0;
+    border-left: 12px solid transparent;
+    border-top: 14px solid var(--ink);
+  }
+
+  .mine .bubble::before {
+    content: '';
+    position: absolute;
+    bottom: -9px;
+    right: 13px;
+    width: 0; height: 0;
+    border-left: 9px solid transparent;
+    border-top: 11px solid var(--yellow);
+    z-index: 1;
+  }
+
+  .theirs .bubble {
+    background: white;
+    color: var(--ink);
+    box-shadow: 4px 4px 0 var(--ink);
+    border-radius: 16px 16px 16px 0;
+  }
+
+  .theirs .bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -13px;
+    left: 10px;
+    width: 0; height: 0;
+    border-right: 12px solid transparent;
+    border-top: 14px solid var(--ink);
+  }
+
+  .theirs .bubble::before {
+    content: '';
+    position: absolute;
+    bottom: -9px;
+    left: 13px;
+    width: 0; height: 0;
+    border-right: 9px solid transparent;
+    border-top: 11px solid white;
+    z-index: 1;
+  }
+
+  .msg-time {
+    font-size: 11px;
+    color: #aaa;
+    font-weight: 700;
+    margin-top: 6px;
+    padding: 0 4px;
+  }
+
+  /* System messages */
+  .sys-msg {
+    text-align: center;
+    font-family: 'Bangers', cursive;
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: #999;
+    padding: 4px 0;
+    border-top: 2px dashed #ccc;
+    border-bottom: 2px dashed #ccc;
+    animation: popIn 0.3s ease;
+  }
+
+  /* SFX explosion for new messages */
+  .sfx-pop {
+    position: fixed;
+    pointer-events: none;
+    font-family: 'Bangers', cursive;
+    font-size: 40px;
+    color: var(--red);
+    text-shadow: 3px 3px 0 var(--yellow), -1px -1px 0 var(--ink);
+    animation: sfxBoom 0.8s ease-out forwards;
+    z-index: 200;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-15deg);
+  }
+
+  @keyframes sfxBoom {
+    0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5) rotate(-15deg); }
+    40% { opacity: 1; transform: translate(-50%, -50%) scale(1.3) rotate(-10deg); }
+    100% { opacity: 0; transform: translate(-50%, -80%) scale(0.8) rotate(-5deg); }
+  }
+
+  /* INPUT AREA */
+  .input-area {
+    background: var(--ink);
+    padding: 12px 16px;
+    border-top: 4px solid var(--red);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  #msgInput {
+    flex: 1;
+    padding: 12px 16px;
+    font-family: 'Comic Neue', cursive;
+    font-size: 15px;
+    font-weight: 700;
+    border: 3px solid var(--yellow);
+    background: white;
+    color: var(--ink);
+    outline: none;
+    box-shadow: 3px 3px 0 rgba(255,215,0,0.5);
+  }
+
+  #msgInput:focus {
+    border-color: white;
+    box-shadow: 3px 3px 0 var(--yellow);
+  }
+
+  #sendBtn {
+    padding: 12px 20px;
+    font-family: 'Bangers', cursive;
+    font-size: 22px;
+    letter-spacing: 2px;
+    background: var(--red);
+    color: white;
+    border: 3px solid var(--yellow);
+    cursor: pointer;
+    box-shadow: 3px 3px 0 rgba(255,215,0,0.5);
+    transition: all 0.1s;
+    white-space: nowrap;
+  }
+
+  #sendBtn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 rgba(255,215,0,0.5);
+  }
+
+  #sendBtn:hover {
+    background: #c0001f;
+  }
+
+  /* Connecting overlay */
+  #connecting {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,10,0.85);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .connect-text {
+    font-family: 'Bangers', cursive;
+    font-size: 36px;
+    letter-spacing: 4px;
+    color: var(--yellow);
+    animation: blink 0.6s step-end infinite;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  .connect-dots {
+    font-family: 'Bangers', cursive;
+    font-size: 50px;
+    color: var(--red);
+    letter-spacing: 8px;
+    animation: dotWave 1s ease-in-out infinite;
+  }
+
+  @keyframes dotWave {
+    0%, 100% { transform: scaleX(1); }
+    50% { transform: scaleX(1.3); }
+  }
+
+  /* Room code copy toast */
+  .toast {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: var(--yellow);
+    font-family: 'Bangers', cursive;
+    font-size: 18px;
+    letter-spacing: 3px;
+    padding: 10px 24px;
+    border: 3px solid var(--yellow);
+    z-index: 500;
+    animation: toastIn 0.3s ease, toastOut 0.3s ease 1.5s forwards;
+  }
+
+  @keyframes toastIn { from { opacity:0; top:80px; } to { opacity:1; top:70px; } }
+  @keytml:toastOut { to { opacity:0; } }
+  @keyframes toastOut { from { opacity:1; } to { opacity:0; top:60px; } }
+
+  /* Mobile */
+  @media (max-width: 500px) {
+    .manga-title { font-size: 54px; }
+    .msg-wrapper { max-width: 90%; }
+    .lobby-panel { padding: 28px 20px; }
+  }
+
+  /* Typing indicator */
+  .typing-indicator {
+    display: none;
+    align-self: flex-start;
+    background: white;
+    border: 3px solid var(--ink);
+    padding: 10px 18px;
+    box-shadow: 3px 3px 0 var(--ink);
+    border-radius: 16px 16px 16px 0;
+    max-width: 80px;
+  }
+
+  .typing-dots {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+  }
+
+  .typing-dots span {
+    width: 8px;
+    height: 8px;
+    background: var(--ink);
+    border-radius: 50%;
+    animation: typingBounce 0.8s ease-in-out infinite;
+  }
+
+  .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes typingBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+</style>
+</head>
+<body>
+
+<div class="speed-bg"></div>
+
+<!-- CONNECTING OVERLAY -->
+<div id="connecting">
+  <div class="connect-dots">⚡ ⚡ ⚡</div>
+  <div class="connect-text">ULANMOQDA...</div>
+</div>
+
+<!-- LOBBY -->
+<div id="lobby">
+  <div class="lobby-panel">
+    <div class="manga-title">SMS<br>CHAT</div>
+    <div class="manga-subtitle">⚡ ONLINE-TIME ⚡</div>
+
+    <span class="sfx-label">✏ ISMINGIZ</span>
+    <input class="manga-input" id="usernameInput" placeholder="ISMINGIZNI KIRITING..." maxlength="20">
+
+    <span class="sfx-label">🔑 XONA KODI (4 raqam)</span>
+    <input class="manga-input" id="roomInput" placeholder="1234" maxlength="6" pattern="[0-9]*">
+
+    <button class="manga-btn btn-join" onclick="joinRoom()">▶ XONAGA KIRISH</button>
+    <div class="divider"> YOKI </div>
+    <button class="manga-btn btn-create" onclick="createRoom()">★ YANGI XONA YARATISH</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-title">⚡ SMS CHAT</div>
+    <div style="display:flex;gap:8px;align-items:center;z-index:1">
+      <div class="users-badge" id="usersBadge">👥 1</div>
+      <div class="room-badge" id="roomBadge" onclick="copyRoom()" title="Kod nusxalash">
+        📋 XONA: <span id="roomDisplay">----</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="messages">
+    <div class="sys-msg">⚡ SMS CHAT DUNYOSIGA XUSH KELIBSIZ ⚡</div>
+  </div>
+
+  <div class="typing-indicator" id="typingIndicator">
+    <div class="typing-dots">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <input id="msgInput" placeholder="Xabar yozing..." maxlength="500" onkeydown="handleKey(event)">
+    <button id="sendBtn" onclick="sendMessage()">YUBORISH ⚡</button>
+  </div>
+</div>
+
+<script>
+// ---- STATE ----
+let client = null;
+let myName = '';
+let roomCode = '';
+let topic = '';
+let myId = Math.random().toString(36).substr(2, 9);
+let onlineUsers = new Map();
+let typingTimeout = null;
+let isTyping = false;
+let typingTimers = {};
+const sfxWords = ['SPAM!', 'BAN!', 'KILL!', 'BOOM!', 'WAW!', 'ZZZ!', 'MIX!', 'MAX!'];
+
+// ---- MQTT CONFIG ----
+const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+
+function generateRoom() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+function createRoom() {
+  const code = generateRoom();
+  document.getElementById('roomInput').value = code;
+  joinRoom();
+}
+
+function joinRoom() {
+  const name = document.getElementById('usernameInput').value.trim();
+  const room = document.getElementById('roomInput').value.trim();
+
+  if (!name) { alert('Ism kiriting!'); return; }
+  if (!room) { alert('Xona kodi kiriting!'); return; }
+
+  myName = name.toUpperCase();
+  roomCode = room;
+  topic = `manga-chat-v1/${roomCode}`;
+
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('connecting').style.display = 'flex';
+
+  connectMQTT();
+}
+
+function connectMQTT() {
+  const clientId = 'manga_' + myId;
+
+  client = mqtt.connect(BROKER, {
+    clientId,
+    keepalive: 60,
+    reconnectPeriod: 3000,
+    connectTimeout: 10000,
+    clean: true,
+  });
+
+  client.on('connect', () => {
+    document.getElementById('connecting').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('roomDisplay').textContent = roomCode;
+
+    // Subscribe to main topic and presence
+    client.subscribe(topic);
+    client.subscribe(topic + '/presence');
+    client.subscribe(topic + '/typing');
+
+    // Announce presence
+    publish(topic + '/presence', {
+      type: 'join',
+      id: myId,
+      name: myName,
+    });
+
+    sysMsg('⚡ ' + myName + ' SUHBATGA QOSHILDI ⚡');
+    document.getElementById('msgInput').focus();
+
+    // Ping presence every 20s
+    setInterval(() => {
+      publish(topic + '/presence', { type: 'ping', id: myId, name: myName });
+    }, 20000);
+  });
+
+  client.on('message', (t, payload) => {
+    try {
+      const data = JSON.parse(payload.toString());
+      if (t === topic) handleMessage(data);
+      else if (t === topic + '/presence') handlePresence(data);
+      else if (t === topic + '/typing') handleTyping(data);
+    } catch(e) {}
+  });
+
+  client.on('error', (err) => {
+    console.error('MQTT error:', err);
+  });
+
+  client.on('offline', () => {
+    sysMsg('📡 ULANISH UZILDI... QAYTA ULANMOQDA');
+  });
+
+  client.on('reconnect', () => {
+    sysMsg('⚡ QAYTA ULANMOQDA...');
+  });
+}
+
+function publish(t, data) {
+  if (client && client.connected) {
+    client.publish(t, JSON.stringify(data));
+  }
+}
+
+function handleMessage(data) {
+  if (data.senderId === myId) return; // already shown
+  appendMessage(data.name, data.text, false, data.timestamp);
+  showSfx();
+}
+
+function handlePresence(data) {
+  if (data.type === 'join' && data.id !== myId) {
+    onlineUsers.set(data.id, data.name);
+    updateUserCount();
+    sysMsg('👋 ' + data.name + ' XONAGA KIRDI');
+    // Let them know we're here
+    setTimeout(() => {
+      publish(topic + '/presence', { type: 'ping', id: myId, name: myName });
+    }, 500);
+  } else if (data.type === 'ping' && data.id !== myId) {
+    onlineUsers.set(data.id, data.name);
+    updateUserCount();
+  } else if (data.type === 'leave' && data.id !== myId) {
+    sysMsg('💨 ' + (onlineUsers.get(data.id) || data.name) + ' CHIQIB KETDI');
+    onlineUsers.delete(data.id);
+    updateUserCount();
+  }
+}
+
+function handleTyping(data) {
+  if (data.id === myId) return;
+  const ind = document.getElementById('typingIndicator');
+
+  // Clear previous timer for this user
+  if (typingTimers[data.id]) clearTimeout(typingTimers[data.id]);
+
+  if (data.typing) {
+    ind.style.display = 'flex';
+    scrollDown();
+    typingTimers[data.id] = setTimeout(() => {
+      ind.style.display = 'none';
+    }, 3000);
+  } else {
+    ind.style.display = 'none';
+  }
+}
+
+function updateUserCount() {
+  document.getElementById('usersBadge').textContent = '👥 ' + (onlineUsers.size + 1);
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter') {
+    sendMessage();
+    return;
+  }
+  // Typing indicator
+  if (!isTyping) {
+    isTyping = true;
+    publish(topic + '/typing', { id: myId, name: myName, typing: true });
+  }
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    isTyping = false;
+    publish(topic + '/typing', { id: myId, name: myName, typing: false });
+  }, 2500);
+}
+
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  const timestamp = Date.now();
+  const data = {
+    senderId: myId,
+    name: myName,
+    text: text,
+    timestamp: timestamp,
+  };
+
+  publish(topic, data);
+  appendMessage(myName, text, true, timestamp);
+  showSfx();
+
+  input.value = '';
+  isTyping = false;
+  publish(topic + '/typing', { id: myId, name: myName, typing: false });
+}
+
+function appendMessage(name, text, isMine, timestamp) {
+  const msgs = document.getElementById('messages');
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg-wrapper ' + (isMine ? 'mine' : 'theirs');
+
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'msg-name';
+  nameDiv.textContent = isMine ? '👤 YOU' : '🎌 ' + name;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'msg-time';
+  timeDiv.textContent = formatTime(timestamp);
+
+  wrapper.appendChild(nameDiv);
+  wrapper.appendChild(bubble);
+  wrapper.appendChild(timeDiv);
+  msgs.appendChild(wrapper);
+  scrollDown();
+}
+
+function sysMsg(text) {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'sys-msg';
+  div.textContent = text;
+  msgs.appendChild(div);
+  scrollDown();
+}
+
+function scrollDown() {
+  const msgs = document.getElementById('messages');
+  setTimeout(() => msgs.scrollTop = msgs.scrollHeight, 50);
+}
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+}
+
+function showSfx() {
+  const sfx = document.createElement('div');
+  sfx.className = 'sfx-pop';
+  sfx.textContent = sfxWords[Math.floor(Math.random() * sfxWords.length)];
+  sfx.style.left = (20 + Math.random() * 60) + '%';
+  sfx.style.top = (20 + Math.random() * 50) + '%';
+  document.body.appendChild(sfx);
+  setTimeout(() => sfx.remove(), 900);
+}
+
+function copyRoom() {
+  navigator.clipboard.writeText(roomCode).catch(() => {});
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = '📋 KOD NUSXALANDI: ' + roomCode;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2000);
+}
+
+// Announce leave on page close
+window.addEventListener('beforeunload', () => {
+  if (client && client.connected) {
+    publish(topic + '/presence', { type: 'leave', id: myId, name: myName });
+  }
+});
+
+// Enter on lobby inputs
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('roomInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') joinRoom();
+  });
+  document.getElementById('usernameInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('roomInput').focus();
+  });
+});
+</script>
+</body>
+</html>
